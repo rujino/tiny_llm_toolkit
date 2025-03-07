@@ -1,10 +1,10 @@
 from langchain.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
-import transformers
+from transformers import Pipeline
 from typing import Optional
+
 class PromptChainingAgent:
-    def __init__(self, pipeline: transformers.pipeline, chroma_db: Chroma, embedding_model: HuggingFaceEmbeddings, response: Optional[str] = None): # type: ignore
-        self.pipeline = pipeline
+    def __init__(self, chroma_db: Chroma, embedding_model: HuggingFaceEmbeddings, response: Optional[str] = None):
         self.chroma_db = chroma_db
         self.embedding_model = embedding_model
         self.response = response if response is not None else ""
@@ -36,32 +36,24 @@ class PromptChainingAgent:
         
         return messages
         
-    def init_generate_chain(self, system_prompt: str, user_prompt: str, rag_search: bool = False, search_k: Optional[int] = None):
+    def init_generate_chain(self, pipeline: Pipeline, system_prompt: str, user_prompt: str, rag_search: bool = False, search_k: Optional[int] = None):
         self.init_chain = True
 
         # 메세지 생성
-        messages = self._message_template(rag_search, system_prompt, user_prompt, search_k) # type: ignore
+        messages = self._message_template(rag_search, system_prompt, user_prompt, search_k)
         
-        prompt = self.pipeline.tokenizer.apply_chat_template( # type: ignore
+        prompt = pipeline.tokenizer.apply_chat_template(
             messages, 
             tokenize=False, 
             add_generation_prompt=True
         )
-
-        # 종료 토큰 설정
-        terminators = [
-            self.pipeline.tokenizer.eos_token_id,
-            self.pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>")
-        ]
         
-        outputs = self.pipeline(
+        outputs = pipeline(
             prompt,
-            max_new_tokens=2048,
-            eos_token_id=terminators,
-            do_sample=True,
-            temperature=0.6,
-            top_p=0.9
+            eos_token_id=pipeline.tokenizer.eos_token_id,
         )
+
+        print("init_generate_chain outputs", outputs)
 
         # 결과 출력 (프롬프트 부분 제거)
         response = outputs[0]["generated_text"][len(prompt):].strip()
@@ -72,34 +64,26 @@ class PromptChainingAgent:
         
         return self
     
-    def semi_generate_chain(self, system_prompt: str, rag_search: bool = False, search_k: Optional[int] = None):
+    def semi_generate_chain(self, pipeline: Pipeline, system_prompt: str, rag_search: bool = False, search_k: Optional[int] = None):
         if not self.init_chain:
             raise RuntimeError("init_generate_chain()을 먼저 호출해야 합니다.")
 
         # 채팅 메시지 구성
-        messages = self._message_template(rag_search, system_prompt, self.response, search_k) # type: ignore
+        messages = self._message_template(rag_search, system_prompt, self.response, search_k)
 
         # 토크나이저 적용
-        prompt = self.pipeline.tokenizer.apply_chat_template(
+        prompt = pipeline.tokenizer.apply_chat_template(
             messages, 
             tokenize=False, 
             add_generation_prompt=True
         )
-
-        # 종료 토큰 설정
-        terminators = [
-            self.pipeline.tokenizer.eos_token_id,
-            self.pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>")
-        ]
         
-        outputs = self.pipeline(
+        outputs = pipeline(
             prompt,
-            max_new_tokens=2048,
-            eos_token_id=terminators,
-            do_sample=True,
-            temperature=0.5,
-            top_p=0.5
+            eos_token_id=pipeline.tokenizer.eos_token_id,
         )
+
+        print("semi_generate_chain outputs", outputs)
         
         # 결과 출력 (프롬프트 부분 제거)
         response = outputs[0]["generated_text"][len(prompt):].strip()
